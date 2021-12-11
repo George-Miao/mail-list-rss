@@ -109,13 +109,14 @@ impl<'a> ToVec for HeaderValue<'a> {
 impl<'a> TryFrom<(&'a Vec<u8>, Message<'a>)> for Feed {
     type Error = anyhow::Error;
     fn try_from((raw, val): (&'a Vec<u8>, Message<'a>)) -> Result<Self> {
+        let config = get_config();
         if !val
             .get_to()
             .to_vec()
             .into_iter()
-            .any(|x| x.ends_with("@rss.miao.do"))
+            .any(|x| x.contains(&config.domain))
         {
-            bail!("Not sending to rss.miao.do, blocked")
+            bail!("Not sending to {}, blocked", config.domain)
         }
         let author = match val.get_from() {
             HeaderValue::Address(addr) => match (addr.address.as_ref(), addr.name.as_ref()) {
