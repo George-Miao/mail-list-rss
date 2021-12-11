@@ -64,29 +64,21 @@ impl Handler for SmtpConnection {
     }
 }
 
-macro_rules! write_resp_to_writer {
-    ($resp:ident, $write:ident) => {{
-        let mut buf = Vec::with_capacity(1024);
-        $resp.write_to(&mut buf)?;
-        $write.write_all(&buf).await?;
-        $write.flush().await?;
-    }};
-}
-
 async fn handle(mut stream: TcpStream, addr: SocketAddr, tx: TX) -> Result<()> {
     info!("{} connected", addr);
     let (read, write) = stream.split();
 
     let mut lines = BufReader::new(read);
-    let mut write = BufWriter::new(write);
+    let mut write = Box::pin(BufWriter::new(write));
 
     let handler = SmtpConnection::new(tx);
     let mut session = SessionBuilder::new("mail-list-rss-server").build(addr.ip(), handler);
     let greeting = session.greeting();
 
-    debug!("<- {:?}", greeting);
+    debug!("   >>> OUT: {:?}", greeting);
 
-    write_resp_to_writer!(greeting, write);
+    greeting.write_to_async(&mut write).await?;
+    write.flush().await?;
 
     let mut buf = String::with_capacity(1024);
 
@@ -95,11 +87,11 @@ async fn handle(mut stream: TcpStream, addr: SocketAddr, tx: TX) -> Result<()> {
             break;
         }
 
-        debug!("-> {}", buf.replace("\r\n", ""));
+        debug!("   >>> IN:  {}", buf.replace("\r\n", ""));
         let resp = session.process(buf.as_bytes());
-        debug!("<- {:?}", resp);
-
-        write_resp_to_writer!(resp, write);
+        debug!("   >>> OUT: {:?}", resp);
+        resp.write_to_async(&mut write).await?;
+        write.flush().await?;
 
         buf.clear();
     }
@@ -117,9 +109,12 @@ pub async fn smtp_server(tx: TX) -> Result<()> {
         .accept()
         .await
     {
-        if let Err(e) = handle(stream, addr, tx.clone()).await {
-            error!("{}", e)
-        }
+        let tx = tx.clone();
+        tokio::spawn(async move {
+            if let Err(e) = handle(stream, addr, tx).await {
+                error!("{}", e)
+            }
+        });
     }
     info!("SMTP server stopping");
     Ok(())
