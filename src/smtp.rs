@@ -2,15 +2,14 @@ use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
 use log::{debug, error, info, warn};
+use mail_parser::Message;
 use mailin::{response, Handler, Response, SessionBuilder};
-use mailparse::parse_mail;
-use tokio::net::TcpStream;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
-    net::TcpListener,
+    net::{TcpListener, TcpStream},
 };
 
-use crate::{db::Feed, TX};
+use crate::{config::get_config, db::Feed, TX};
 
 struct SmtpConnection {
     data: Option<Vec<u8>>,
@@ -22,22 +21,30 @@ impl SmtpConnection {
         Self { data: None, tx }
     }
     pub fn end(&self) -> Result<()> {
-        let data = self.data.as_ref().expect("data should be initialized");
-        info!("{}", String::from_utf8(data.to_owned())?);
-        match parse_mail(data) {
-            Ok(parsed) => {
-                let feed: Feed = parsed.try_into()?;
+        let data = self.data.to_owned().expect("data should be initialized");
+        match Message::parse(&data) {
+            Some(parsed) => {
+                let feed: Feed = (&data, parsed).try_into()?;
                 self.tx.send(feed)?;
                 Ok(())
             }
-            Err(e) => {
-                bail!("Parse failed: {:?}", e)
+            None => {
+                bail!("Parse failed")
             }
         }
     }
 }
 
 impl Handler for SmtpConnection {
+    fn rcpt(&mut self, to: &str) -> Response {
+        let domain = &get_config().domain;
+        //  Block any rcpt that's not on my domain
+        if to.contains(domain) {
+            response::OK
+        } else {
+            response::NO_SERVICE
+        }
+    }
     fn data_start(&mut self, _: &str, _: &str, _: bool, _: &[String]) -> Response {
         self.data = Some(Vec::with_capacity(8 * 1024));
         response::OK
@@ -69,11 +76,12 @@ macro_rules! write_resp_to_writer {
 async fn handle(mut stream: TcpStream, addr: SocketAddr, tx: TX) -> Result<()> {
     info!("{} connected", addr);
     let (read, write) = stream.split();
+
     let mut lines = BufReader::new(read);
     let mut write = BufWriter::new(write);
 
     let handler = SmtpConnection::new(tx);
-    let mut session = SessionBuilder::new("test_server").build("127.0.0.1".parse()?, handler);
+    let mut session = SessionBuilder::new("mail-list-rss-server").build(addr.ip(), handler);
     let greeting = session.greeting();
 
     debug!("<- {:?}", greeting);
@@ -103,7 +111,12 @@ async fn handle(mut stream: TcpStream, addr: SocketAddr, tx: TX) -> Result<()> {
 
 pub async fn smtp_server(tx: TX) -> Result<()> {
     info!("SMTP server starting");
-    while let Ok((stream, addr)) = TcpListener::bind("127.0.0.1:10000").await?.accept().await {
+    let config = get_config();
+    while let Ok((stream, addr)) = TcpListener::bind(format!("0.0.0.0:{}", config.smtp_port))
+        .await?
+        .accept()
+        .await
+    {
         if let Err(e) = handle(stream, addr, tx.clone()).await {
             error!("{}", e)
         }

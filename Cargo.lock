@@ -178,16 +178,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "charset"
-version = "0.1.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18e9079d1a12a2cc2bffb5db039c43661836ead4082120d5844f02555aca2d46"
-dependencies = [
- "base64",
- "encoding_rs",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -854,14 +844,25 @@ dependencies = [
  "crossfire",
  "futures",
  "log",
+ "mail-parser",
  "mailin",
- "mailparse",
  "mongodb",
  "nanoid",
  "rss",
  "serde",
  "simple_logger",
  "tokio",
+]
+
+[[package]]
+name = "mail-parser"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a158f70c5b8dd64c77864706cecf10a2a8fec3a52fa60b8cc05b558459facfcf"
+dependencies = [
+ "encoding_rs",
+ "serde",
+ "serde_bytes",
 ]
 
 [[package]]
@@ -875,17 +876,6 @@ dependencies = [
  "log",
  "nom",
  "ternop",
-]
-
-[[package]]
-name = "mailparse"
-version = "0.13.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ee6e1ca1c8396da58f8128176f6980dd57bec84c8670a479519d3655f2d6734"
-dependencies = [
- "base64",
- "charset",
- "quoted_printable",
 ]
 
 [[package]]
@@ -1212,12 +1202,6 @@ checksum = "38bc8cc6a5f2e3655e0899c1b848643b2562f853f114bfec7be120678e3ace05"
 dependencies = [
  "proc-macro2",
 ]
-
-[[package]]
-name = "quoted_printable"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fee2dce59f7a43418e3382c766554c614e06a552d53a8f07ef499ea4b332c0f"
 
 [[package]]
 name = "radium"

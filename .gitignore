@@ -2,3 +2,5 @@
 *.html
 /.vscode
 /data
+/vendor
+fly.toml

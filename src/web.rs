@@ -13,7 +13,10 @@ use futures::{StreamExt, TryStreamExt};
 use log::info;
 use mongodb::{bson::doc, options::FindOptions};
 
-use crate::db::{Feeds, List, Summary};
+use crate::{
+    config::get_config,
+    db::{Feeds, List, Summary},
+};
 
 pub async fn web_server(collection: Feeds) -> Result<()> {
     let app = Router::new()
@@ -23,7 +26,7 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
         .layer(AddExtensionLayer::new(collection))
         .route("/health", any(|| async { "OK" }));
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr = SocketAddr::from(([0, 0, 0, 0], get_config().web_port));
 
     info!("HTTP server starting");
 
@@ -35,32 +38,6 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
     info!("HTTP server stopped");
 
     Ok(())
-}
-
-async fn render_feeds(feeds: Feeds) -> Result<String> {
-    let option = FindOptions::builder()
-        .limit(10)
-        .sort(None)
-        // .return_key(true)
-        .build();
-    let feeds = feeds
-        .find(None, option)
-        .await?
-        .try_fold(Vec::with_capacity(10), |mut acc, x| async move {
-            acc.push(x.into());
-            Ok(acc)
-        })
-        .await?;
-
-    let ret = rss::ChannelBuilder::default()
-        .title("Mail List")
-        .generator(Some("http://github.com/George-Miao/mail-list-rss".into()))
-        .pub_date(Utc::now().to_rfc2822())
-        .link("http://github.com/George-Miao/mail-list-rss")
-        .items(feeds)
-        .build()
-        .to_string();
-    Ok(ret)
 }
 
 async fn rss(Extension(feed): Extension<Feeds>) -> impl IntoResponse {
@@ -76,6 +53,32 @@ async fn rss(Extension(feed): Extension<Feeds>) -> impl IntoResponse {
             e.to_string(),
         ),
     }
+}
+
+async fn render_feeds(feeds: Feeds) -> Result<String> {
+    let config = get_config();
+    let option = FindOptions::builder()
+        .limit(config.per_page as i64)
+        .sort(None)
+        .build();
+    let feeds = feeds
+        .find(None, option)
+        .await?
+        .try_fold(Vec::with_capacity(10), |mut acc, x| async move {
+            acc.push(x.into_rss());
+            Ok(acc)
+        })
+        .await?;
+
+    let ret = rss::ChannelBuilder::default()
+        .title("Mail List")
+        .generator(Some("http://github.com/George-Miao/mail-list-rss".into()))
+        .link("http://github.com/George-Miao/mail-list-rss")
+        .pub_date(Utc::now().to_rfc2822())
+        .items(feeds)
+        .build()
+        .to_string();
+    Ok(ret)
 }
 
 async fn list(Extension(feeds): Extension<Feeds>) -> impl IntoResponse {

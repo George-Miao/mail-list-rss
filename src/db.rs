@@ -1,29 +1,50 @@
 use std::fmt::Display;
 
-use anyhow::{anyhow, Result};
+use anyhow::{bail, Result};
 use chrono::{DateTime, Utc};
 use log::{info, warn};
-use mailparse::{MailHeaderMap, ParsedMail};
+use mail_parser::{HeaderValue, Message};
 use mongodb::Collection;
 use rss::{GuidBuilder, Item, ItemBuilder};
 use serde::{Deserialize, Serialize};
 
-use crate::RX;
+use crate::{config::get_config, RX};
 
 pub type Feeds = Collection<Feed>;
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Feed {
+    pub id: String,
     pub created_at: DateTime<Utc>,
     pub title: String,
     pub author: String,
     pub content: String,
-    pub id: String,
+    pub raw: String,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Index {
     pub id: String,
+}
+
+impl Feed {
+    pub fn into_rss(self) -> Item {
+        let config = get_config();
+
+        let guid = GuidBuilder::default()
+            .permalink(true)
+            .value(format!("https://{}/feeds/{}", config.domain, self.id))
+            .build();
+
+        ItemBuilder::default()
+            .title(self.title)
+            .link(Some(format!("https://{}/feeds/{}", config.domain, self.id)))
+            .author(Some(self.author))
+            .pub_date(Some(self.created_at.to_rfc2822()))
+            .guid(Some(guid))
+            .content(Some(self.content))
+            .build()
+    }
 }
 
 impl Display for Feed {
@@ -40,46 +61,85 @@ impl Display for Feed {
     }
 }
 
-impl<'a> TryFrom<ParsedMail<'a>> for Feed {
-    type Error = anyhow::Error;
-    fn try_from(val: ParsedMail<'a>) -> Result<Self> {
-        let author = val
-            .headers
-            .get_first_value("From")
-            .ok_or_else(|| anyhow!("No From"))?;
-        let title = val
-            .headers
-            .get_first_value("Subject")
-            .unwrap_or_else(|| author.to_owned());
-        let created_at = Utc::now();
-        let content = val.get_body()?;
+pub trait ToVec {
+    fn to_vec(&self) -> Vec<String>;
+}
 
-        Ok(Feed {
-            created_at,
-            title,
-            author,
-            content,
-            id: nanoid::nanoid!(10),
-        })
+impl<'a> ToVec for mail_parser::Addr<'a> {
+    fn to_vec(&self) -> Vec<String> {
+        self.address
+            .as_ref()
+            .map(|x| vec![x.to_string()])
+            .unwrap_or_default()
     }
 }
 
-impl From<Feed> for Item {
-    fn from(feed: Feed) -> Self {
-        ItemBuilder::default()
-            .title(feed.title)
-            .link(Some(format!("https://rss.miao.do/feeds/{}", feed.id)))
-            .author(Some(feed.author))
-            .pub_date(Some(feed.created_at.to_rfc2822()))
-            .guid(Some(
-                GuidBuilder::default()
-                    .permalink(true)
-                    .value(format!("https://rss.miao.do/feeds/{}", feed.id))
-                    .build(),
-            ))
-            .content(Some(feed.content))
-            .link(Some("https://baidu.com".to_owned()))
-            .build()
+impl<'a> ToVec for Vec<mail_parser::Addr<'a>> {
+    fn to_vec(&self) -> Vec<String> {
+        self.iter().flat_map(|x| x.to_vec()).collect()
+    }
+}
+
+impl<'a> ToVec for mail_parser::Group<'a> {
+    fn to_vec(&self) -> Vec<String> {
+        self.addresses.to_vec()
+    }
+}
+
+impl<'a> ToVec for Vec<mail_parser::Group<'a>> {
+    fn to_vec(&self) -> Vec<String> {
+        self.iter().flat_map(|x| x.to_vec()).collect()
+    }
+}
+
+impl<'a> ToVec for HeaderValue<'a> {
+    fn to_vec(&self) -> Vec<String> {
+        match self {
+            HeaderValue::Address(addr) => addr.to_vec(),
+            HeaderValue::AddressList(list) => list.to_vec(),
+            HeaderValue::Group(group) => group.to_vec(),
+            HeaderValue::GroupList(list) => list.to_vec(),
+            HeaderValue::Text(content) => vec![content.to_string()],
+            HeaderValue::TextList(list) => list.iter().map(|x| x.to_string()).collect(),
+            _ => vec![],
+        }
+    }
+}
+
+impl<'a> TryFrom<(&'a Vec<u8>, Message<'a>)> for Feed {
+    type Error = anyhow::Error;
+    fn try_from((raw, val): (&'a Vec<u8>, Message<'a>)) -> Result<Self> {
+        if !val
+            .get_to()
+            .to_vec()
+            .into_iter()
+            .any(|x| x.ends_with("@rss.miao.do"))
+        {
+            bail!("Not sending to rss.miao.do, blocked")
+        }
+        let author = match val.get_from() {
+            HeaderValue::Address(addr) => match (addr.address.as_ref(), addr.name.as_ref()) {
+                (Some(addr), Some(name)) => format!("{} ({})", addr, name),
+                (None, Some(name)) => name.to_string(),
+                (Some(addr), None) => addr.to_string(),
+                _ => "Unknown".to_owned(),
+            },
+            _ => "Unknown".to_owned(),
+        };
+        let title = val.get_subject().unwrap_or("Unknown Title").to_owned();
+        let created_at = Utc::now();
+        let content = val
+            .get_html_bodies()
+            .flat_map(|x| x.get_contents().to_vec())
+            .collect::<Vec<_>>();
+        Ok(Feed {
+            raw: String::from_utf8(raw.to_owned())?,
+            content: String::from_utf8(content)?,
+            created_at,
+            title,
+            author,
+            id: nanoid::nanoid!(10),
+        })
     }
 }
 
@@ -104,4 +164,11 @@ pub struct Summary {
 #[derive(Deserialize, Serialize)]
 pub struct List {
     pub items: Vec<Summary>,
+}
+
+#[test]
+fn test() {
+    const RAW: &str = include_str!("../data/dex-raw.txt");
+    let parsed = mail_parser::Message::parse(RAW.as_bytes()).unwrap();
+    println!("{:#?}", parsed);
 }
