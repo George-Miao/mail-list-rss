@@ -1,5 +1,7 @@
 #![feature(once_cell)]
 
+use std::env;
+
 use anyhow::Result;
 use crossfire::mpsc::{bounded_tx_blocking_rx_future, RxFuture, SharedSenderBRecvF, TxBlocking};
 use mongodb::{options::ClientOptions, Client};
@@ -19,7 +21,10 @@ type RX = RxFuture<Feed, SharedSenderBRecvF>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    simple_logger::init_with_level(log::Level::Info)?;
+    if env::var("RUST_LOG").is_err() {
+        env::set_var("RUST_LOG", "INFO")
+    }
+    pretty_env_logger::try_init()?;
 
     let config = get_config();
 
