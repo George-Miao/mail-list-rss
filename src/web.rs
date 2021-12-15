@@ -4,7 +4,7 @@ use anyhow::Result;
 use axum::{
     extract::{Extension, Path},
     http::{header, StatusCode},
-    response::{Headers, IntoResponse},
+    response::{Headers, Html, IntoResponse},
     routing::{any, get},
     AddExtensionLayer, Json, Router,
 };
@@ -20,9 +20,10 @@ use crate::{
 
 pub async fn web_server(collection: Feeds) -> Result<()> {
     let app = Router::new()
+        .route("/", get(index))
         .route("/feeds/:key", get(raw))
+        .route("/feeds", get(list))
         .route("/rss", get(rss))
-        .route("/list", get(list))
         .layer(AddExtensionLayer::new(collection))
         .route("/health", any(|| async { "OK" }));
 
@@ -38,6 +39,10 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
     info!("HTTP server stopped");
 
     Ok(())
+}
+
+async fn index() -> impl IntoResponse {
+    Html(include_str!("./static/index.html"))
 }
 
 async fn rss(Extension(feed): Extension<Feeds>) -> impl IntoResponse {
@@ -58,8 +63,8 @@ async fn rss(Extension(feed): Extension<Feeds>) -> impl IntoResponse {
 async fn render_feeds(feeds: Feeds) -> Result<String> {
     let config = get_config();
     let option = FindOptions::builder()
+        .sort(Some(doc! { "create_at": 1 }))
         .limit(config.per_page as i64)
-        .sort(None)
         .build();
     let feeds = feeds
         .find(None, option)
@@ -87,10 +92,14 @@ async fn list(Extension(feeds): Extension<Feeds>) -> impl IntoResponse {
 
 async fn render_list(feeds: Feeds) -> Result<List> {
     let res = feeds
-        .find(None, None)
+        .find(
+            None,
+            FindOptions::builder().sort(doc! { "create_at": 1 }).build(),
+        )
         .await?
         .filter_map(|x| async move {
             x.ok().map(|x| Summary {
+                create_at: x.created_at.to_rfc2822(),
                 title: x.title,
                 id: x.id,
             })
