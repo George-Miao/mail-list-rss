@@ -1,7 +1,7 @@
 use std::fmt::Display;
 
 use anyhow::{bail, Result};
-use chrono::{DateTime, Utc};
+use chrono::{serde::ts_milliseconds, DateTime, Utc};
 use log::{info, warn};
 use mail_parser::{HeaderValue, Message};
 use mongodb::Collection;
@@ -15,6 +15,7 @@ pub type Feeds = Collection<Feed>;
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Feed {
     pub id: String,
+    #[serde(with = "ts_milliseconds")]
     pub created_at: DateTime<Utc>,
     pub title: String,
     pub author: String,
@@ -160,6 +161,7 @@ pub async fn database_servo(collection: Feeds, rx: RX) {
 #[derive(Deserialize, Serialize)]
 pub struct Summary {
     pub title: String,
+    pub create_at: String,
     pub id: String,
 }
 #[derive(Deserialize, Serialize)]
