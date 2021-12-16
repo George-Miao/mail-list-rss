@@ -63,8 +63,8 @@ async fn rss(Extension(feed): Extension<Feeds>) -> impl IntoResponse {
 async fn render_feeds(feeds: Feeds) -> Result<String> {
     let config = get_config();
     let option = FindOptions::builder()
-        .sort(Some(doc! { "create_at": 1 }))
         .limit(config.per_page as i64)
+        .sort(doc! { "created_at": -1 })
         .build();
     let feeds = feeds
         .find(None, option)
@@ -94,7 +94,9 @@ async fn render_list(feeds: Feeds) -> Result<List> {
     let res = feeds
         .find(
             None,
-            FindOptions::builder().sort(doc! { "create_at": 1 }).build(),
+            FindOptions::builder()
+                .sort(doc! { "created_at": -1 })
+                .build(),
         )
         .await?
         .filter_map(|x| async move {
