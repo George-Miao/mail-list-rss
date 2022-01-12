@@ -1,12 +1,10 @@
-use std::fmt::Display;
-
 use anyhow::{bail, Result};
 use chrono::{serde::ts_milliseconds, DateTime, Utc};
-use log::{info, warn};
 use mail_parser::{HeaderValue, Message};
 use mongodb::Collection;
 use rss::{GuidBuilder, Item, ItemBuilder};
 use serde::{Deserialize, Serialize};
+use tracing::{info, info_span, warn, Instrument};
 
 use crate::{config::get_config, RX};
 
@@ -46,18 +44,21 @@ impl Feed {
             .content(Some(self.content))
             .build()
     }
-}
 
-impl Display for Feed {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Feed #{} [{}] <{}> by {} (len {})",
-            self.id,
-            self.created_at.format("%T"),
-            self.title,
-            self.author,
-            self.content.len()
+    pub fn trace(&self) {
+        let Self {
+            id,
+            title,
+            author,
+            content,
+            ..
+        } = self;
+        info!(
+            id = id.as_str(),
+            title = title.as_str(),
+            author = author.as_str(),
+            len = content.len(),
+            "New Feed",
         )
     }
 }
@@ -146,16 +147,17 @@ impl<'a> TryFrom<(&'a Vec<u8>, Message<'a>)> for Feed {
 }
 
 pub async fn database_servo(collection: Feeds, rx: RX) {
-    info!("Database servo starting");
+    info!(target: "Database", "Starting");
 
     while let Ok(feed) = rx.recv().await {
-        info!("{}", feed);
-        if let Err(e) = collection.insert_one(feed, None).await {
-            warn!("Error insert doc: {}", e)
+        let span = info_span!("Database.insert");
+        feed.trace();
+        if let Err(e) = collection.insert_one(feed, None).instrument(span).await {
+            warn!(target: "Database", "Error insert doc: {}", e)
         }
     }
 
-    info!("Database servo stopping");
+    info!(target: "Database", "Stopping");
 }
 
 #[derive(Deserialize, Serialize)]

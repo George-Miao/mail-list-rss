@@ -1,13 +1,13 @@
 use std::net::SocketAddr;
 
 use anyhow::{bail, Result};
-use log::{debug, error, info, warn};
 use mail_parser::Message;
 use mailin::{response, Handler, Response, SessionBuilder};
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
     net::{TcpListener, TcpStream},
 };
+use tracing::{debug, error, info, warn};
 
 use crate::{config::get_config, db::Feed, TX};
 
@@ -65,7 +65,7 @@ impl Handler for SmtpConnection {
 }
 
 async fn handle(mut stream: TcpStream, addr: SocketAddr, tx: TX) -> Result<()> {
-    info!("{} connected", addr);
+    debug!(target: "SMTP", "SMTP: {} connected", addr);
     let (read, write) = stream.split();
 
     let mut lines = BufReader::new(read);
@@ -75,7 +75,7 @@ async fn handle(mut stream: TcpStream, addr: SocketAddr, tx: TX) -> Result<()> {
     let mut session = SessionBuilder::new("mail-list-rss-server").build(addr.ip(), handler);
     let greeting = session.greeting();
 
-    debug!("   >>> OUT: {:?}", greeting);
+    debug!(target: "SMTP", "   >>> OUT: {:?}", greeting);
 
     greeting.write_to_async(&mut write).await?;
     write.flush().await?;
@@ -87,22 +87,21 @@ async fn handle(mut stream: TcpStream, addr: SocketAddr, tx: TX) -> Result<()> {
             break;
         }
 
-        debug!("   >>> IN:  {}", buf.replace("\r\n", ""));
+        debug!(target: "SMTP", "   >>> IN:  {}", buf.replace("\r\n", ""));
         let resp = session.process(buf.as_bytes());
-        debug!("   >>> OUT: {:?}", resp);
+        debug!(target: "SMTP", "   >>> OUT: {:?}", resp);
         resp.write_to_async(&mut write).await?;
         write.flush().await?;
 
         buf.clear();
     }
 
-    info!("{} disconnected", addr);
-    info!("--------------------------------");
+    debug!(target: "SMTP", "SMTP: {} disconnected", addr);
     Ok(())
 }
 
 pub async fn smtp_server(tx: TX) -> Result<()> {
-    info!("SMTP server starting");
+    info!(target: "SMTP", "Starting");
     let config = get_config();
     while let Ok((stream, addr)) = TcpListener::bind(format!("0.0.0.0:{}", config.smtp_port))
         .await?
@@ -116,6 +115,6 @@ pub async fn smtp_server(tx: TX) -> Result<()> {
             }
         });
     }
-    info!("SMTP server stopping");
+    info!(target: "SMTP", "Stopping");
     Ok(())
 }

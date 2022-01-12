@@ -1,8 +1,9 @@
-use std::{env::var, lazy::SyncLazy};
+use std::env::var;
 
 use anyhow::Result;
+use once_cell::sync::Lazy;
 
-static CONFIG: SyncLazy<Config> = SyncLazy::new(|| Config::from_env().unwrap());
+static CONFIG: Lazy<Config> = Lazy::new(|| Config::from_env().unwrap());
 
 #[derive(Clone, Debug)]
 pub struct Config {

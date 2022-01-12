@@ -1,10 +1,10 @@
-#![feature(once_cell)]
-
-use std::env;
+use std::{any, time::Duration};
 
 use anyhow::Result;
 use crossfire::mpsc::{bounded_tx_blocking_rx_future, RxFuture, SharedSenderBRecvF, TxBlocking};
 use mongodb::{options::ClientOptions, Client};
+use tracing::{info, Level};
+use tracing_subscriber::FmtSubscriber;
 
 mod config;
 mod db;
@@ -21,15 +21,28 @@ type RX = RxFuture<Feed, SharedSenderBRecvF>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    if env::var("RUST_LOG").is_err() {
-        env::set_var("RUST_LOG", "INFO")
-    }
-    pretty_env_logger::try_init()?;
+    let subscriber = FmtSubscriber::builder()
+        .with_max_level(Level::INFO)
+        .finish();
+
+    tracing::subscriber::set_global_default(subscriber)?;
 
     let config = get_config();
 
-    let client = Client::with_options(ClientOptions::parse(&config.mongo_con_str).await?)?;
-    let db = client.database(&config.mongo_db_name);
+    let mongo_client = {
+        let mut opt = ClientOptions::parse(&config.mongo_con_str).await?;
+        opt.connect_timeout = Some(Duration::from_secs(1));
+        Client::with_options(opt)?
+    };
+
+    let db_names = mongo_client
+        .list_database_names(None, None)
+        .await?
+        .join(" / ");
+
+    info!(db = db_names.as_str(), "Databases");
+
+    let db = mongo_client.database(&config.mongo_db_name);
     let feeds = db.collection::<Feed>("feed");
 
     let (tx, rx) = bounded_tx_blocking_rx_future::<Feed>(10);

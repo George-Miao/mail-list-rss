@@ -10,33 +10,63 @@ use axum::{
 };
 use chrono::Utc;
 use futures::{StreamExt, TryStreamExt};
-use log::info;
 use mongodb::{bson::doc, options::FindOptions};
+use tower_http::trace::{OnRequest, OnResponse, TraceLayer};
+use tracing::{info, Level};
 
 use crate::{
     config::get_config,
     db::{Feeds, List, Summary},
 };
 
+#[derive(Copy, Clone)]
+struct Logger {}
+
+impl<B> OnRequest<B> for Logger {
+    fn on_request(&mut self, request: &axum::http::Request<B>, _: &tracing::Span) {
+        let route = request.uri().path();
+        tracing::event!(target: "web", Level::INFO, route);
+    }
+}
+
+impl<B> OnResponse<B> for Logger {
+    fn on_response(
+        self,
+        response: &axum::http::Response<B>,
+        latency: std::time::Duration,
+        _: &tracing::Span,
+    ) {
+        let status = response.status().as_u16();
+        let time = latency.as_secs_f32();
+        tracing::event!(target: "web", Level::INFO, status, time)
+    }
+}
+
 pub async fn web_server(collection: Feeds) -> Result<()> {
+    let logger = Logger {};
     let app = Router::new()
         .route("/", get(index))
         .route("/feeds/:key", get(raw))
         .route("/feeds", get(list))
         .route("/rss", get(rss))
         .layer(AddExtensionLayer::new(collection))
-        .route("/health", any(|| async { "OK" }));
+        .route("/health", any(|| async { "OK" }))
+        .layer(
+            TraceLayer::new_for_http()
+                .on_request(logger)
+                .on_response(logger),
+        );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], get_config().web_port));
 
-    info!("HTTP server starting");
+    info!(target: "web", "Starting");
 
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await
         .unwrap();
 
-    info!("HTTP server stopped");
+    info!(target: "web", "Stopped");
 
     Ok(())
 }
@@ -117,7 +147,6 @@ async fn raw(
     Extension(feeds): Extension<Feeds>,
 ) -> impl IntoResponse {
     let key = map.get("key").expect("key should exist");
-    info!("Key: {}", key);
     let res = feeds.find_one(doc! { "id" : key }, None).await;
     match res {
         Ok(Some(res)) => (
