@@ -3,21 +3,41 @@ use std::{collections::HashMap, net::SocketAddr};
 use anyhow::Result;
 use axum::{
     extract::{Extension, Path},
-    http::{header, StatusCode},
-    response::{Headers, Html, IntoResponse},
+    handler::Handler,
+    http::{
+        header::{self, CONTENT_TYPE},
+        HeaderValue, StatusCode,
+    },
+    response::{Headers, Html, IntoResponse, Response},
     routing::{any, get},
     AddExtensionLayer, Json, Router,
 };
 use chrono::Utc;
 use futures::{StreamExt, TryStreamExt};
 use mongodb::{bson::doc, options::FindOptions};
-use tower_http::trace::{OnRequest, OnResponse, TraceLayer};
+use tower_http::{
+    set_header::SetResponseHeaderLayer,
+    trace::{OnRequest, OnResponse, TraceLayer},
+};
 use tracing::{info, Level};
 
 use crate::{
     config::get_config,
     db::{Feeds, List, Summary},
 };
+
+fn utf8_header(res: &Response) -> Option<HeaderValue> {
+    if let Some(header) = res.headers().get(CONTENT_TYPE) {
+        if let Ok(header) = header.to_str() {
+            if !header.ends_with("charset=utf-8") {
+                let mut ret = header.to_owned();
+                ret.push_str("; charset=utf-8");
+                return HeaderValue::from_str(&ret).ok();
+            }
+        }
+    }
+    None
+}
 
 #[derive(Copy, Clone)]
 struct Logger {}
@@ -44,10 +64,13 @@ impl<B> OnResponse<B> for Logger {
 
 pub async fn web_server(collection: Feeds) -> Result<()> {
     let logger = Logger {};
+
+    let utf8_layer = SetResponseHeaderLayer::overriding(CONTENT_TYPE, utf8_header);
+
     let app = Router::new()
         .route("/", get(index))
         .route("/feeds/:key", get(raw))
-        .route("/feeds", get(list))
+        .route("/feeds", get(list.layer(utf8_layer)))
         .route("/rss", get(rss))
         .layer(AddExtensionLayer::new(collection))
         .route("/health", any(|| async { "OK" }))
@@ -79,7 +102,10 @@ async fn rss(Extension(feed): Extension<Feeds>) -> impl IntoResponse {
     match render_feeds(feed).await {
         Ok(content) => (
             StatusCode::OK,
-            Headers(vec![(header::CONTENT_TYPE, "application/xml")]),
+            Headers(vec![(
+                header::CONTENT_TYPE,
+                "application/xml; charset=utf-8",
+            )]),
             content,
         ),
         Err(e) => (
@@ -151,7 +177,7 @@ async fn raw(
     match res {
         Ok(Some(res)) => (
             StatusCode::OK,
-            Headers(vec![(header::CONTENT_TYPE, "text/html")]),
+            Headers(vec![(header::CONTENT_TYPE, "text/html; charset=utf-8")]),
             res.content,
         ),
         Ok(None) => (
