@@ -16,6 +16,7 @@ use chrono::Utc;
 use futures::{StreamExt, TryStreamExt};
 use mongodb::{bson::doc, options::FindOptions};
 use tower_http::{
+    cors,
     set_header::SetResponseHeaderLayer,
     trace::{OnRequest, OnResponse, TraceLayer},
 };
@@ -73,11 +74,21 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
         .route("/feeds", get(list.layer(utf8_layer)))
         .route("/rss", get(rss))
         .layer(AddExtensionLayer::new(collection))
-        .route("/health", any(|| async { "OK" }))
         .layer(
             TraceLayer::new_for_http()
                 .on_request(logger)
                 .on_response(logger),
+        )
+        .route("/health", any(|| async { "OK" }))
+        .layer(SetResponseHeaderLayer::appending(
+            header::WARNING,
+            HeaderValue::from_str("LOL").ok(),
+        ))
+        .layer(
+            cors::CorsLayer::new()
+                .allow_headers(cors::any())
+                .allow_methods(cors::any())
+                .allow_origin(cors::any()),
         );
 
     let addr = SocketAddr::from(([0, 0, 0, 0], get_config().web_port));
@@ -95,7 +106,7 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
 }
 
 async fn index() -> impl IntoResponse {
-    Html(include_str!("./static/index.html"))
+    Html(include_str!("../front/dist/index.html"))
 }
 
 async fn rss(Extension(feed): Extension<Feeds>) -> impl IntoResponse {
