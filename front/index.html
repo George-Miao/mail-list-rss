@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <title>Mail-list-rss Index</title>
+
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body class="px-4 py-6 sm:px-6 sm:py-8 lg:px-8 lg:py-10 font-sans">
+    <h1 class="text-4xl mb-5">Mail List ⭤ RSS</h1>
+    <ul class="links">
+      <a href="/">
+        <code>/ or /index.html</code>
+        This page
+      </a>
+      <a href="/feeds">
+        <code>/feeds</code>
+        List feeds
+      </a>
+      <a href="/">
+        <code>/feeds/:id</code>
+        Get specific feed
+      </a>
+      <a href="/health">
+        <code>/health</code>
+        Health check - always return
+        <code>200 &quot;OK&quot;</code>
+      </a>
+      <a href="/rss">
+        <code>/rss</code>
+        Render RSS xml
+      </a>
+    </ul>
+    <ul class="summaries grid xl:grid-cols-3 sm:grid-cols-2">
+      <template id="summary-temp">
+        <a
+          class="summary flex flex-col px-5 py-2 my-1 hover:bg-zinc-100 cursor-pointer"
+        >
+          <span class="summary-id text-xs text-zinc-500">ID</span>
+          <span
+            class="summary-title text-2xl text-red-800 uppercase pt-1 pb-0.5"
+          >
+            Title
+          </span>
+          <span class="summary-date text-sm text-zinc-700">Date</span>
+        </a>
+      </template>
+    </ul>
+  </body>
+</html>

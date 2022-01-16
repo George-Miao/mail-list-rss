@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply transition-all;
+  }
+
+  .links {
+    a {
+      @apply block cursor-pointer my-1 p-2 hover:bg-zinc-100;
+    }
+  }
+
+  code {
+    @apply font-mono text-sm mr-1 text-red-800  inline-block;
+  }
+}
