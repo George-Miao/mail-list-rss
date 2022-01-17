@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Mail-list-rss Index</title>
 
     <script type="module" src="/src/main.ts"></script>
@@ -33,18 +33,16 @@
         Render RSS xml
       </a>
     </ul>
-    <ul class="summaries grid xl:grid-cols-3 sm:grid-cols-2">
+    <ul class="summaries grid lg:grid-cols-3 sm:grid-cols-2">
       <template id="summary-temp">
         <a
-          class="summary flex flex-col px-5 py-2 my-1 hover:bg-zinc-100 cursor-pointer"
+          class="summary overflow-hidden flex flex-col px-5 py-2 my-1 hover:bg-zinc-100 cursor-pointer"
         >
-          <span class="summary-id text-xs text-zinc-500">ID</span>
+          <span class="summary-id text-xs text-zinc-500"></span>
           <span
-            class="summary-title text-2xl text-red-800 uppercase pt-1 pb-0.5"
-          >
-            Title
-          </span>
-          <span class="summary-date text-sm text-zinc-700">Date</span>
+            class="summary-title font-medium flex-grow break-words text-2xl text-red-800 uppercase pt-1 pb-0.5"
+          ></span>
+          <span class="summary-date text-sm text-zinc-700"></span>
         </a>
       </template>
     </ul>
