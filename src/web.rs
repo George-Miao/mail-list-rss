@@ -1,17 +1,19 @@
-use std::{collections::HashMap, net::SocketAddr};
+use std::{collections::HashMap, net::SocketAddr, str::FromStr};
 
 use anyhow::Result;
 use axum::{
     extract::{Extension, Path},
     handler::Handler,
     http::{
-        header::{self, CONTENT_TYPE},
-        HeaderValue, StatusCode,
+        header::{self, HeaderName, CONTENT_TYPE},
+        uri::{Authority, Scheme},
+        HeaderValue, Request, StatusCode,
     },
-    response::{Headers, Html, IntoResponse, Response},
+    response::{Headers, Html, IntoResponse, Redirect, Response},
     routing::{any, get},
     AddExtensionLayer, Json, Router,
 };
+use axum_extra::middleware::{middleware_fn, Next};
 use chrono::Utc;
 use futures::{StreamExt, TryStreamExt};
 use mongodb::{bson::doc, options::FindOptions};
@@ -38,6 +40,29 @@ fn utf8_header(res: &Response) -> Option<HeaderValue> {
         }
     }
     None
+}
+
+async fn http_rediretor<B>(req: Request<B>, next: Next<B>) -> impl IntoResponse {
+    let header = req
+        .headers()
+        .get(HeaderName::from_lowercase(b"x-forwarded-proto").unwrap())
+        .and_then(|x| x.to_str().ok());
+    let config = get_config();
+    let uri = req.uri().to_string();
+
+    info!(schema = header, uri = uri.as_str());
+    match req
+        .headers()
+        .get(HeaderName::from_lowercase(b"x-forwarded-proto").unwrap())
+    {
+        Some(schema) if schema.to_str().map(|x| x != "https").unwrap_or(true) => {
+            let mut parts = req.uri().clone().into_parts();
+            parts.scheme = Some(Scheme::HTTPS);
+            parts.authority = Some(Authority::from_str(&config.domain).expect("Bad domain"));
+            Err(Redirect::permanent(parts.try_into().unwrap()))
+        }
+        _ => Ok(next.run(req).await),
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -80,11 +105,8 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
                 .on_response(logger),
         )
         .route("/health", any(|| async { "OK" }))
-        .layer(SetResponseHeaderLayer::appending(
-            header::WARNING,
-            HeaderValue::from_str("LOL").ok(),
-        ))
-        .layer(
+        .route_layer(middleware_fn::from_fn(http_rediretor))
+        .route_layer(
             cors::CorsLayer::new()
                 .allow_headers(cors::any())
                 .allow_methods(cors::any())
