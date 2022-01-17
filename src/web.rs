@@ -43,14 +43,8 @@ fn utf8_header(res: &Response) -> Option<HeaderValue> {
 }
 
 async fn http_rediretor<B>(req: Request<B>, next: Next<B>) -> impl IntoResponse {
-    let header = req
-        .headers()
-        .get(HeaderName::from_lowercase(b"x-forwarded-proto").unwrap())
-        .and_then(|x| x.to_str().ok());
     let config = get_config();
-    let uri = req.uri().to_string();
 
-    info!(schema = header, uri = uri.as_str());
     match req
         .headers()
         .get(HeaderName::from_lowercase(b"x-forwarded-proto").unwrap())
