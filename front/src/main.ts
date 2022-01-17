@@ -1,6 +1,6 @@
 import './main.css'
 ;(async () => {
-  const baseUrl = 'http://localhost:8080'
+  const baseUrl = ''
   const temp = document.querySelector('#summary-temp') as HTMLTemplateElement
   const container = document.querySelector('.summaries')
 
