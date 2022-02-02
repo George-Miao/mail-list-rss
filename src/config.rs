@@ -13,6 +13,8 @@ pub struct Config {
     pub domain: String,
     pub mongo_con_str: String,
     pub mongo_db_name: String,
+    pub username: Option<String>,
+    pub password: Option<String>,
 }
 
 impl Config {
@@ -25,7 +27,15 @@ impl Config {
             mongo_con_str: var("MONGO_CON_STR")
                 .unwrap_or_else(|_| "mongodb://localhost:27017".to_owned()),
             mongo_db_name: var("MONGO_DB_NAME").unwrap_or_else(|_| "mail-list-rss".to_owned()),
+            username: var("AUTH_USERNAME").ok(),
+            password: var("AUTH_PASSWORD").ok(),
         };
+
+        if ret.username.is_some() ^ ret.password.is_some() {
+            // Only one exist and the other is not set
+            panic!("Both username and password should be set or not set");
+        }
+
         Ok(ret)
     }
 }

@@ -18,11 +18,12 @@ use chrono::Utc;
 use futures::{StreamExt, TryStreamExt};
 use mongodb::{bson::doc, options::FindOptions};
 use tower_http::{
+    auth::RequireAuthorizationLayer,
     cors,
     set_header::SetResponseHeaderLayer,
     trace::{OnRequest, OnResponse, TraceLayer},
 };
-use tracing::{info, Level};
+use tracing::{info, log::warn, Level};
 
 use crate::{
     config::get_config,
@@ -86,8 +87,9 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
     let logger = Logger {};
 
     let utf8_layer = SetResponseHeaderLayer::overriding(CONTENT_TYPE, utf8_header);
+    let config = get_config();
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/", get(index))
         .route("/feeds/:key", get(raw))
         .route("/feeds", get(list.layer(utf8_layer)))
@@ -97,7 +99,22 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
             TraceLayer::new_for_http()
                 .on_request(logger)
                 .on_response(logger),
-        )
+        );
+
+    if config.username.is_some() {
+        info!(
+            target: "web",
+            "Using basic auth"
+        );
+        app = app.layer(RequireAuthorizationLayer::basic(
+            config.username.as_ref().unwrap(),
+            config.password.as_ref().unwrap(),
+        ))
+    } else {
+        warn!(target: "web", "No auth configured, this can be dangerous and should only be used in development");
+    }
+
+    app = app
         .route("/health", any(|| async { "OK" }))
         .route_layer(middleware_fn::from_fn(http_rediretor))
         .route_layer(
@@ -107,7 +124,7 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
                 .allow_origin(cors::any()),
         );
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], get_config().web_port));
+    let addr = SocketAddr::from(([0, 0, 0, 0], config.web_port));
 
     info!(target: "web", "Starting");
 
