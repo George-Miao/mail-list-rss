@@ -3,8 +3,8 @@ use std::time::Duration;
 use anyhow::Result;
 use crossfire::mpsc::{bounded_tx_blocking_rx_future, RxFuture, SharedSenderBRecvF, TxBlocking};
 use mongodb::{options::ClientOptions, Client};
-use tracing::{info, Level};
-use tracing_subscriber::FmtSubscriber;
+use tracing::{info, metadata::LevelFilter};
+use tracing_subscriber::util::SubscriberInitExt;
 
 mod config;
 mod db;
@@ -21,7 +21,12 @@ type RX = RxFuture<Feed, SharedSenderBRecvF>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    FmtSubscriber::builder().with_max_level(Level::INFO).init();
+    tracing_subscriber::fmt()
+        .without_time()
+        .compact()
+        .with_max_level(LevelFilter::INFO)
+        .finish()
+        .init();
 
     let config = get_config();
 
