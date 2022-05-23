@@ -31,16 +31,17 @@ impl Config {
             password: var("AUTH_PASSWORD").ok(),
         };
 
-        if ret.username.is_some() ^ ret.password.is_some() {
-            // Only one exist and the other is not set
-            panic!("Both username and password should be set or not set");
-        }
+        assert!(
+            !(ret.username.is_some() ^ ret.password.is_some()),
+            "Both username and password should be set or not set"
+        );
 
         Ok(ret)
     }
-}
 
-#[inline]
-pub fn get_config<'a>() -> &'a Config {
-    &CONFIG
+    #[inline]
+    #[must_use]
+    pub fn get<'a>() -> &'a Self {
+        &CONFIG
+    }
 }

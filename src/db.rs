@@ -6,7 +6,7 @@ use rss::{GuidBuilder, Item, ItemBuilder};
 use serde::{Deserialize, Serialize};
 use tracing::{info, info_span, warn, Instrument};
 
-use crate::{config::get_config, RX};
+use crate::{config::Config, RX};
 
 pub type Feeds = Collection<Feed>;
 
@@ -27,8 +27,9 @@ pub struct Index {
 }
 
 impl Feed {
+    #[must_use]
     pub fn into_rss(self) -> Item {
-        let config = get_config();
+        let config = Config::get();
 
         let guid = GuidBuilder::default()
             .permalink(true)
@@ -59,7 +60,7 @@ impl Feed {
             author = author.as_str(),
             len = content.len(),
             "New Feed",
-        )
+        );
     }
 }
 
@@ -78,7 +79,7 @@ impl<'a> ToVec for mail_parser::Addr<'a> {
 
 impl<'a> ToVec for Vec<mail_parser::Addr<'a>> {
     fn to_vec(&self) -> Vec<String> {
-        self.iter().flat_map(|x| x.to_vec()).collect()
+        self.iter().flat_map(ToVec::to_vec).collect()
     }
 }
 
@@ -90,7 +91,7 @@ impl<'a> ToVec for mail_parser::Group<'a> {
 
 impl<'a> ToVec for Vec<mail_parser::Group<'a>> {
     fn to_vec(&self) -> Vec<String> {
-        self.iter().flat_map(|x| x.to_vec()).collect()
+        self.iter().flat_map(ToVec::to_vec).collect()
     }
 }
 
@@ -102,17 +103,17 @@ impl<'a> ToVec for HeaderValue<'a> {
             HeaderValue::Group(group) => group.to_vec(),
             HeaderValue::GroupList(list) => list.to_vec(),
             HeaderValue::Text(content) => vec![content.to_string()],
-            HeaderValue::TextList(list) => list.iter().map(|x| x.to_string()).collect(),
+            HeaderValue::TextList(list) => list.iter().map(ToString::to_string).collect(),
             _ => vec![],
         }
     }
 }
 
-impl<'a> TryFrom<(&'a Vec<u8>, Message<'a>)> for Feed {
+impl<'a> TryFrom<(&'a [u8], Message<'a>)> for Feed {
     type Error = anyhow::Error;
 
-    fn try_from((raw, val): (&'a Vec<u8>, Message<'a>)) -> Result<Self> {
-        let config = get_config();
+    fn try_from((raw, val): (&'a [u8], Message<'a>)) -> Result<Self> {
+        let config = Config::get();
         if !val
             .get_to()
             .to_vec()
@@ -136,8 +137,8 @@ impl<'a> TryFrom<(&'a Vec<u8>, Message<'a>)> for Feed {
             .get_html_bodies()
             .flat_map(|x| x.get_contents().to_vec())
             .collect::<Vec<_>>();
-        Ok(Feed {
-            raw: String::from_utf8(raw.to_owned())?,
+        Ok(Self {
+            raw: String::from_utf8(raw.to_vec())?,
             content: String::from_utf8(content)?,
             created_at,
             title,
@@ -147,14 +148,14 @@ impl<'a> TryFrom<(&'a Vec<u8>, Message<'a>)> for Feed {
     }
 }
 
-pub async fn database_servo(collection: Feeds, rx: RX) {
+pub async fn servo(collection: Feeds, rx: RX) {
     info!(target: "Database", "Starting");
 
     while let Ok(feed) = rx.recv().await {
         let span = info_span!("Database.insert");
         feed.trace();
         if let Err(e) = collection.insert_one(feed, None).instrument(span).await {
-            warn!(target: "Database", "Error insert doc: {}", e)
+            warn!(target: "Database", "Error insert doc: {}", e);
         }
     }
 

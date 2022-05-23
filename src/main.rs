@@ -1,3 +1,9 @@
+#![warn(clippy::pedantic)]
+#![warn(clippy::nursery)]
+#![warn(clippy::all)]
+#![allow(clippy::missing_panics_doc)]
+#![allow(clippy::missing_errors_doc)]
+
 use std::time::Duration;
 
 use anyhow::Result;
@@ -6,15 +12,7 @@ use mongodb::{options::ClientOptions, Client};
 use tracing::{info, metadata::LevelFilter};
 use tracing_subscriber::util::SubscriberInitExt;
 
-mod config;
-mod db;
-mod smtp;
-mod web;
-
-use config::*;
-use db::*;
-use smtp::*;
-use web::*;
+mod_use::mod_use![config, db, smtp, web];
 
 type TX = TxBlocking<Feed, SharedSenderBRecvF>;
 type RX = RxFuture<Feed, SharedSenderBRecvF>;
@@ -28,7 +26,7 @@ async fn main() -> Result<()> {
         .finish()
         .init();
 
-    let config = get_config();
+    let config = Config::get();
 
     let mongo_client = {
         let mut opt = ClientOptions::parse(&config.mongo_con_str).await?;
@@ -48,13 +46,13 @@ async fn main() -> Result<()> {
 
     let (tx, rx) = bounded_tx_blocking_rx_future::<Feed>(10);
 
-    let bg = tokio::spawn(database_servo(feeds.clone(), rx));
-    let server = tokio::spawn(web_server(feeds));
+    let database_servo = tokio::spawn(servo(feeds.clone(), rx));
+    let web_server = tokio::spawn(web::server(feeds));
 
-    smtp_server(tx).await?;
+    smtp::server(tx).await?;
 
-    bg.abort();
-    server.abort();
+    database_servo.abort();
+    web_server.abort();
 
     Ok(())
 }

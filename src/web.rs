@@ -15,7 +15,10 @@ use axum::{
 };
 use axum_extra::middleware::{middleware_fn, Next};
 use chrono::Utc;
-use futures::{StreamExt, TryStreamExt};
+use futures::{
+    future::{ready, Ready},
+    StreamExt, TryStreamExt,
+};
 use mongodb::{bson::doc, options::FindOptions};
 use tower_http::{
     auth::RequireAuthorizationLayer,
@@ -26,25 +29,25 @@ use tower_http::{
 use tracing::{info, log::warn, Level};
 
 use crate::{
-    config::get_config,
     db::{Feeds, List, Summary},
+    Config,
 };
 
 fn utf8_header(res: &Response) -> Option<HeaderValue> {
     if let Some(header) = res.headers().get(CONTENT_TYPE) {
         if let Ok(header) = header.to_str() {
             if !header.ends_with("charset=utf-8") {
-                let mut ret = header.to_owned();
-                ret.push_str("; charset=utf-8");
-                return HeaderValue::from_str(&ret).ok();
+                let mut header = header.to_owned();
+                header.push_str("; charset=utf-8");
+                return HeaderValue::from_str(&header).ok();
             }
         }
     }
     None
 }
 
-async fn http_rediretor<B>(req: Request<B>, next: Next<B>) -> impl IntoResponse {
-    let config = get_config();
+async fn http_rediretor<B: Send + Sync>(req: Request<B>, next: Next<B>) -> impl IntoResponse {
+    let config = Config::get();
 
     match req
         .headers()
@@ -79,17 +82,39 @@ impl<B> OnResponse<B> for Logger {
     ) {
         let status = response.status().as_u16();
         let time = latency.as_secs_f32();
-        tracing::event!(target: "web", Level::INFO, status, time)
+        tracing::event!(target: "web", Level::INFO, status, time);
     }
 }
 
-pub async fn web_server(collection: Feeds) -> Result<()> {
+trait RouterExt {
+    fn auth_layer(self, username: Option<&str>, password: Option<&str>) -> Self;
+}
+
+impl RouterExt for Router {
+    fn auth_layer(self, username: Option<&str>, password: Option<&str>) -> Self {
+        if username.is_some() {
+            info!(
+                target: "web",
+                "Using basic auth"
+            );
+            self.route_layer(RequireAuthorizationLayer::basic(
+                username.as_ref().unwrap(),
+                password.as_ref().unwrap(),
+            ))
+        } else {
+            warn!(target: "web", "No auth configured, this can be dangerous and should only be used in development");
+            self
+        }
+    }
+}
+
+pub async fn server(collection: Feeds) -> Result<()> {
     let logger = Logger {};
 
     let utf8_layer = SetResponseHeaderLayer::overriding(CONTENT_TYPE, utf8_header);
-    let config = get_config();
+    let config = Config::get();
 
-    let mut app = Router::new()
+    let app = Router::new()
         .route("/", get(index))
         .route("/feeds/:key", get(raw))
         .route("/feeds", get(list.layer(utf8_layer)))
@@ -99,22 +124,8 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
             TraceLayer::new_for_http()
                 .on_request(logger)
                 .on_response(logger),
-        );
-
-    if config.username.is_some() {
-        info!(
-            target: "web",
-            "Using basic auth"
-        );
-        app = app.layer(RequireAuthorizationLayer::basic(
-            config.username.as_ref().unwrap(),
-            config.password.as_ref().unwrap(),
-        ))
-    } else {
-        warn!(target: "web", "No auth configured, this can be dangerous and should only be used in development");
-    }
-
-    app = app
+        )
+        .auth_layer(config.username.as_deref(), config.password.as_deref())
         .route("/health", any(|| async { "OK" }))
         .route_layer(middleware_fn::from_fn(http_rediretor))
         .route_layer(
@@ -138,8 +149,8 @@ pub async fn web_server(collection: Feeds) -> Result<()> {
     Ok(())
 }
 
-async fn index() -> impl IntoResponse {
-    Html(include_str!("../front/dist/index.html"))
+fn index() -> Ready<impl IntoResponse> {
+    ready(Html(include_str!("../front/dist/index.html")))
 }
 
 async fn rss(Extension(feed): Extension<Feeds>) -> impl IntoResponse {
@@ -161,9 +172,9 @@ async fn rss(Extension(feed): Extension<Feeds>) -> impl IntoResponse {
 }
 
 async fn render_feeds(feeds: Feeds) -> Result<String> {
-    let config = get_config();
+    let config = Config::get();
     let option = FindOptions::builder()
-        .limit(config.per_page as i64)
+        .limit(i64::from(config.per_page))
         .sort(doc! { "created_at": -1 })
         .build();
     let feeds = feeds

@@ -9,7 +9,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 
-use crate::{config::get_config, db::Feed, TX};
+use crate::{db::Feed, Config, TX};
 
 struct SmtpConnection {
     data: Option<Vec<u8>>,
@@ -20,11 +20,12 @@ impl SmtpConnection {
     pub fn new(tx: TX) -> Self {
         Self { data: None, tx }
     }
-    pub fn end(&self) -> Result<()> {
-        let data = self.data.to_owned().expect("data should be initialized");
+
+    pub fn end(&mut self) -> Result<()> {
+        let data = self.data.take().expect("data should be initialized");
         match Message::parse(&data) {
             Some(parsed) => {
-                let feed: Feed = (&data, parsed).try_into()?;
+                let feed: Feed = (data.as_slice(), parsed).try_into()?;
                 self.tx.send(feed)?;
                 Ok(())
             }
@@ -37,7 +38,7 @@ impl SmtpConnection {
 
 impl Handler for SmtpConnection {
     fn rcpt(&mut self, to: &str) -> Response {
-        let domain = &get_config().domain;
+        let domain = &Config::get().domain;
         //  Block any rcpt that's not on my domain
         if to.contains(domain) {
             response::OK
@@ -45,6 +46,7 @@ impl Handler for SmtpConnection {
             response::NO_SERVICE
         }
     }
+
     fn data_start(&mut self, _: &str, _: &str, _: bool, _: &[String]) -> Response {
         self.data = Some(Vec::with_capacity(8 * 1024));
         response::OK
@@ -100,9 +102,9 @@ async fn handle(mut stream: TcpStream, addr: SocketAddr, tx: TX) -> Result<()> {
     Ok(())
 }
 
-pub async fn smtp_server(tx: TX) -> Result<()> {
+pub async fn server(tx: TX) -> Result<()> {
     info!(target: "SMTP", "Starting");
-    let config = get_config();
+    let config = Config::get();
     while let Ok((stream, addr)) = TcpListener::bind(format!("0.0.0.0:{}", config.smtp_port))
         .await?
         .accept()
@@ -111,7 +113,7 @@ pub async fn smtp_server(tx: TX) -> Result<()> {
         let tx = tx.clone();
         tokio::spawn(async move {
             if let Err(e) = handle(stream, addr, tx).await {
-                error!("{}", e)
+                error!("{}", e);
             }
         });
     }
