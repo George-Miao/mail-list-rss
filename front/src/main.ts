@@ -5,7 +5,7 @@ const sleep = (ms: number) =>
     setTimeout(res, ms)
   })
 ;(async () => {
-  const baseUrl = 'http://localhost:8080'
+  const baseUrl = ''
   const template = document.querySelector('.summary-template') as HTMLTemplateElement | null
   const container = document.querySelector('.summaries')
 
