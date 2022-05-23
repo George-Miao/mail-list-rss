@@ -3,19 +3,24 @@
 #![warn(clippy::all)]
 #![allow(clippy::missing_panics_doc)]
 #![allow(clippy::missing_errors_doc)]
+#![allow(clippy::redundant_pub_crate)]
 
 use std::time::Duration;
 
 use anyhow::Result;
-use crossfire::mpsc::{bounded_tx_blocking_rx_future, RxFuture, SharedSenderBRecvF, TxBlocking};
 use mongodb::{options::ClientOptions, Client};
-use tracing::{info, metadata::LevelFilter};
+use tokio::{
+    signal::ctrl_c,
+    spawn,
+    sync::mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+};
+use tracing::{info, metadata::LevelFilter, warn};
 use tracing_subscriber::util::SubscriberInitExt;
 
 mod_use::mod_use![config, db, smtp, web];
 
-type TX = TxBlocking<Feed, SharedSenderBRecvF>;
-type RX = RxFuture<Feed, SharedSenderBRecvF>;
+type TX = UnboundedSender<Feed>;
+type RX = UnboundedReceiver<Feed>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -44,15 +49,22 @@ async fn main() -> Result<()> {
     let db = mongo_client.database(&config.mongo_db_name);
     let feeds = db.collection::<Feed>("feed");
 
-    let (tx, rx) = bounded_tx_blocking_rx_future::<Feed>(10);
+    let (tx, rx) = unbounded_channel::<Feed>();
 
-    let database_servo = tokio::spawn(servo(feeds.clone(), rx));
-    let web_server = tokio::spawn(web::server(feeds));
-
-    smtp::server(tx).await?;
-
-    database_servo.abort();
-    web_server.abort();
+    tokio::select! {
+        _ = spawn(db::servo(feeds.clone(), rx)) => {
+            warn!("SMTP server stopped");
+        },
+        _ = spawn(web::server(feeds)) => {
+            warn!("SMTP server stopped");
+        },
+        _ = spawn(smtp::server(tx)) => {
+            warn!("SMTP server stopped");
+        }
+        _ = ctrl_c() => {
+            info!("Ctrl-C received, shutting down");
+        }
+    }
 
     Ok(())
 }

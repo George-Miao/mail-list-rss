@@ -148,10 +148,10 @@ impl<'a> TryFrom<(&'a [u8], Message<'a>)> for Feed {
     }
 }
 
-pub async fn servo(collection: Feeds, rx: RX) {
+pub async fn servo(collection: Feeds, mut rx: RX) {
     info!(target: "Database", "Starting");
 
-    while let Ok(feed) = rx.recv().await {
+    while let Some(feed) = rx.recv().await {
         let span = info_span!("Database.insert");
         feed.trace();
         if let Err(e) = collection.insert_one(feed, None).instrument(span).await {

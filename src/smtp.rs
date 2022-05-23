@@ -17,7 +17,7 @@ struct SmtpConnection {
 }
 
 impl SmtpConnection {
-    pub fn new(tx: TX) -> Self {
+    pub const fn new(tx: TX) -> Self {
         Self { data: None, tx }
     }
 

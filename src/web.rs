@@ -1,4 +1,4 @@
-use std::{collections::HashMap, net::SocketAddr, str::FromStr};
+use std::{net::SocketAddr, str::FromStr};
 
 use anyhow::Result;
 use axum::{
@@ -20,13 +20,14 @@ use futures::{
     StreamExt, TryStreamExt,
 };
 use mongodb::{bson::doc, options::FindOptions};
+use serde::{Deserialize, Serialize};
 use tower_http::{
     auth::RequireAuthorizationLayer,
     cors,
     set_header::SetResponseHeaderLayer,
     trace::{OnRequest, OnResponse, TraceLayer},
 };
-use tracing::{info, log::warn, Level};
+use tracing::{info, warn};
 
 use crate::{
     db::{Feeds, List, Summary},
@@ -68,8 +69,10 @@ struct Logger {}
 
 impl<B> OnRequest<B> for Logger {
     fn on_request(&mut self, request: &axum::http::Request<B>, _: &tracing::Span) {
+        let method = request.method();
         let route = request.uri().path();
-        tracing::event!(target: "web", Level::INFO, route);
+
+        info!(target: "web",  "=> {} {}", method, route);
     }
 }
 
@@ -81,8 +84,7 @@ impl<B> OnResponse<B> for Logger {
         _: &tracing::Span,
     ) {
         let status = response.status().as_u16();
-        let time = latency.as_secs_f32();
-        tracing::event!(target: "web", Level::INFO, status, time);
+        info!(target: "web", status, ?latency, "<=");
     }
 }
 
@@ -92,7 +94,7 @@ trait RouterExt {
 
 impl RouterExt for Router {
     fn auth_layer(self, username: Option<&str>, password: Option<&str>) -> Self {
-        if username.is_some() {
+        if username.is_some() && password.is_some() {
             info!(
                 target: "web",
                 "Using basic auth"
@@ -223,13 +225,14 @@ async fn render_list(feeds: Feeds) -> Result<List> {
     Ok(List { items: res })
 }
 
-async fn raw(
-    Path(map): Path<HashMap<String, String>>,
-    Extension(feeds): Extension<Feeds>,
-) -> impl IntoResponse {
-    let key = map.get("key").expect("key should exist");
-    let res = feeds.find_one(doc! { "id" : key }, None).await;
-    match res {
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct Key {
+    pub key: String,
+}
+
+async fn raw(Path(map): Path<Key>, Extension(feeds): Extension<Feeds>) -> impl IntoResponse {
+    let key = &map.key;
+    match feeds.find_one(doc! { "id" : key }, None).await {
         Ok(Some(res)) => (
             StatusCode::OK,
             Headers(vec![(header::CONTENT_TYPE, "text/html; charset=utf-8")]),
@@ -240,10 +243,14 @@ async fn raw(
             Headers(vec![]),
             format!("Cannot find {}", key),
         ),
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Headers(vec![]),
-            e.to_string(),
-        ),
+        Err(error) => {
+            warn!(target: "web", %error, "Database error");
+
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Headers(vec![]),
+                error.to_string(),
+            )
+        }
     }
 }
