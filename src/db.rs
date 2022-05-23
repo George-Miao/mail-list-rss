@@ -36,7 +36,7 @@ impl Feed {
             .build();
 
         ItemBuilder::default()
-            .title(self.title)
+            .title(Some(self.title))
             .link(Some(format!("https://{}/feeds/{}", config.domain, self.id)))
             .author(Some(self.author))
             .pub_date(Some(self.created_at.to_rfc2822()))
@@ -110,6 +110,7 @@ impl<'a> ToVec for HeaderValue<'a> {
 
 impl<'a> TryFrom<(&'a Vec<u8>, Message<'a>)> for Feed {
     type Error = anyhow::Error;
+
     fn try_from((raw, val): (&'a Vec<u8>, Message<'a>)) -> Result<Self> {
         let config = get_config();
         if !val

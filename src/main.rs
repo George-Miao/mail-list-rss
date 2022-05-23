@@ -1,4 +1,4 @@
-use std::{time::Duration};
+use std::time::Duration;
 
 use anyhow::Result;
 use crossfire::mpsc::{bounded_tx_blocking_rx_future, RxFuture, SharedSenderBRecvF, TxBlocking};
@@ -21,11 +21,7 @@ type RX = RxFuture<Feed, SharedSenderBRecvF>;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::INFO)
-        .finish();
-
-    tracing::subscriber::set_global_default(subscriber)?;
+    FmtSubscriber::builder().with_max_level(Level::INFO).init();
 
     let config = get_config();
 

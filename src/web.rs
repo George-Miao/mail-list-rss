@@ -179,7 +179,7 @@ async fn render_feeds(feeds: Feeds) -> Result<String> {
         .title("Mail List")
         .generator(Some("http://github.com/George-Miao/mail-list-rss".into()))
         .link("http://github.com/George-Miao/mail-list-rss")
-        .pub_date(Utc::now().to_rfc2822())
+        .pub_date(Some(Utc::now().to_rfc2822()))
         .items(feeds)
         .build()
         .to_string();

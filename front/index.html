@@ -26,7 +26,7 @@
       <a href="/health">
         <code>/health</code>
         Health check - always return
-        <code>200 &quot;OK&quot;</code>
+        <code>204 &quot;NO_CONTENT&quot;</code>
       </a>
       <a href="/rss">
         <code>/rss</code>
@@ -34,9 +34,10 @@
       </a>
     </ul>
     <ul class="summaries grid lg:grid-cols-3 sm:grid-cols-2">
-      <template id="summary-temp">
+      <a class="summaries-placeholder text-xl my-4">Loading...</a>
+      <template class="summary-template">
         <a
-          class="summary overflow-hidden flex flex-col px-5 py-2 my-1 hover:bg-zinc-100 cursor-pointer"
+          class="summary overflow-hidden flex flex-col px-5 py-2 my-1  cursor-pointer hover:bg-zinc-100"
         >
           <span class="summary-id text-xs text-zinc-500"></span>
           <span

@@ -4,13 +4,13 @@ module.exports = {
     extend: {
       colors: {
         red: {
-          800: '#be223a'
-        }
+          800: '#be223a',
+        },
       },
       fontFamily: {
-        sans: ['Avenir', 'Arial', 'sans-serif']
-      }
-    }
+        sans: ['Avenir', 'Arial', 'sans-serif'],
+      },
+    },
   },
-  plugins: []
-}
+  plugins: [],
+};
