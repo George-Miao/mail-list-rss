@@ -128,7 +128,7 @@ pub async fn server(collection: Feeds) -> Result<()> {
                 .on_response(logger),
         )
         .auth_layer(config.username.as_deref(), config.password.as_deref())
-        .route("/health", any(|| async { "OK" }))
+        .route("/health", any(|| ready(StatusCode::NO_CONTENT)))
         .route_layer(middleware_fn::from_fn(http_rediretor))
         .route_layer(
             cors::CorsLayer::new()
