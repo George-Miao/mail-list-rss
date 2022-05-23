@@ -2,7 +2,6 @@
 /.vscode
 /data
 /vendor
-fly.toml
 # Logs
 logs
 *.log
